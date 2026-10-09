@@ -1,0 +1,42 @@
+[package]
+name = "secureshare_backend"
+version = "0.2.0"
+edition = "2021"
+default-run = "secureshare_backend"
+
+# API node: stateless HTTP node (run N copies behind the load balancer)
+[[bin]]
+name = "secureshare_backend"
+path = "src/main.rs"
+
+# Storage node: stores encrypted chunks on local disk (run M copies)
+[[bin]]
+name = "storage_node"
+path = "src/bin/storage_node.rs"
+
+[dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
+axum = { version = "0.7", features = ["multipart"] }
+axum-extra = { version = "0.9", features = ["cookie"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+dotenv = "0.15"
+futures = "0.3"
+hex = "0.4"
+jsonwebtoken = "9"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rsa = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "migrate", "macros"] }
+time = "0.3"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+validator = { version = "0.16", features = ["derive"] }

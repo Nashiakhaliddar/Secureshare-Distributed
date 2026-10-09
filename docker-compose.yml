@@ -1,0 +1,224 @@
+# Whole distributed system on one machine:
+#   1 PostgreSQL (metadata) + 5 storage nodes + 3 API nodes + nginx load balancer + Next.js frontend
+#
+#   docker compose up --build
+#   open http://localhost:3000        (UI)       http://localhost:8080/api/cluster/status  (cluster state)
+
+x-backend: &backend
+  image: secureshare-backend:latest
+  build: ./backend
+  restart: unless-stopped
+
+x-api-env: &api-env
+  PORT: 8000
+  DATABASE_URL: postgres://secureshare:${POSTGRES_PASSWORD}@postgres:5432/secureshare
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+  JWT_MAXAGE: ${JWT_MAXAGE:-60}
+  MASTER_KEY: ${MASTER_KEY}
+  CLUSTER_TOKEN: ${CLUSTER_TOKEN}
+  CORS_ORIGIN: http://localhost:3000
+  STORAGE_NODES: s1=http://storage1:9001,s2=http://storage2:9001,s3=http://storage3:9001,s4=http://storage4:9001,s5=http://storage5:9001
+  REPLICATION_FACTOR: ${REPLICATION_FACTOR:-3}
+  WRITE_QUORUM: ${WRITE_QUORUM:-2}
+  CHUNK_SIZE: ${CHUNK_SIZE:-1048576}
+  PARALLELISM: ${PARALLELISM:-8}
+  RUST_LOG: info,sqlx=warn,tower_http=warn
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: secureshare-postgres
+    environment:
+      POSTGRES_USER: secureshare
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: secureshare
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secureshare"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  storage1:
+    <<: *backend
+    container_name: secureshare-storage1
+    command: ["storage_node"]
+    environment:
+      NODE_ID: s1
+      PORT: 9001
+      DATA_DIR: /data
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN}
+    volumes:
+      - storage1-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  storage2:
+    <<: *backend
+    container_name: secureshare-storage2
+    command: ["storage_node"]
+    environment:
+      NODE_ID: s2
+      PORT: 9001
+      DATA_DIR: /data
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN}
+    volumes:
+      - storage2-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  storage3:
+    <<: *backend
+    container_name: secureshare-storage3
+    command: ["storage_node"]
+    environment:
+      NODE_ID: s3
+      PORT: 9001
+      DATA_DIR: /data
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN}
+    volumes:
+      - storage3-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  storage4:
+    <<: *backend
+    container_name: secureshare-storage4
+    command: ["storage_node"]
+    environment:
+      NODE_ID: s4
+      PORT: 9001
+      DATA_DIR: /data
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN}
+    volumes:
+      - storage4-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  storage5:
+    <<: *backend
+    container_name: secureshare-storage5
+    command: ["storage_node"]
+    environment:
+      NODE_ID: s5
+      PORT: 9001
+      DATA_DIR: /data
+      CLUSTER_TOKEN: ${CLUSTER_TOKEN}
+    volumes:
+      - storage5-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api1:
+    <<: *backend
+    container_name: secureshare-api1
+    command: ["secureshare_backend"]
+    environment:
+      <<: *api-env
+      NODE_ID: api-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage1: {condition: service_healthy}
+      storage2: {condition: service_healthy}
+      storage3: {condition: service_healthy}
+      storage4: {condition: service_healthy}
+      storage5: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api2:
+    <<: *backend
+    container_name: secureshare-api2
+    command: ["secureshare_backend"]
+    environment:
+      <<: *api-env
+      NODE_ID: api-2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage1: {condition: service_healthy}
+      storage2: {condition: service_healthy}
+      storage3: {condition: service_healthy}
+      storage4: {condition: service_healthy}
+      storage5: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api3:
+    <<: *backend
+    container_name: secureshare-api3
+    command: ["secureshare_backend"]
+    environment:
+      <<: *api-env
+      NODE_ID: api-3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage1: {condition: service_healthy}
+      storage2: {condition: service_healthy}
+      storage3: {condition: service_healthy}
+      storage4: {condition: service_healthy}
+      storage5: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  loadbalancer:
+    image: nginx:1.27-alpine
+    container_name: secureshare-lb
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - api1
+      - api2
+      - api3
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080/api
+    container_name: secureshare-frontend
+    environment:
+      API_BASE_URL: http://loadbalancer/api
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loadbalancer
+
+volumes:
+  pgdata:
+  storage1-data:
+  storage2-data:
+  storage3-data:
+  storage4-data:
+  storage5-data:
